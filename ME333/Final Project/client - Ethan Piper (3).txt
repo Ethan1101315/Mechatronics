@@ -1,0 +1,127 @@
+% Ethan Piper
+% ME333
+
+function client(port)
+%   provides a menu for accessing PIC32 motor control functions
+%
+%   client(port)
+%
+%   Input Arguments:
+%       port - the name of the com port.  This should be the same as what
+%               you use in screen or putty in quotes ' '
+%
+%   Example:
+%       client('/dev/ttyUSB0') (Linux/Mac)
+%       client('COM3') (PC)
+%
+%   For convenience, you may want to change this so that the port is hardcoded.
+   
+% Opening COM connection
+if ~isempty(instrfind)
+    fclose(instrfind);
+    delete(instrfind);
+end
+
+fprintf('Opening port %s....\n',port);
+
+% settings for opening the serial port. baud rate 230400, hardware flow control
+% wait up to 120 seconds for data before timing out
+mySerial = serial(port, 'BaudRate', 230400, 'FlowControl', 'hardware','Timeout',120); 
+
+% opens serial connection
+fopen(mySerial);
+% closes serial port when function exits
+clean = onCleanup(@()fclose(mySerial));                                 
+
+has_quit = false;
+% menu loop
+while ~has_quit
+    fprintf('PIC32 MOTOR DRIVER INTERFACE\n\n');
+    % display the menu options; this list will grow
+    fprintf('a: Read current sensor (counts)    b: Read current sensor (mA)     c: Read encoder (counts)  \n');
+    fprintf('d: Read encoder (degrees)          e: Reset encoder                f: Set PWM (-100 to 100) \n')
+    fprintf('g: Set current gains               h: Get current gains            i: Set position gains  \n')
+    fprintf('j: Get position gains              k: Test current gains           l: Go to angle (deg) \n')
+    fprintf('m: Load step trajectory            n: Load cubic trajectory        O: Execute Trajectory \n')
+    fprintf('p: Unpower the motor               r: Display the mode             q: Quit \n')
+    
+    % read the user's choice
+    selection = input('\nENTER COMMAND: ', 's');
+     
+    % send the command to the PIC32
+    fprintf(mySerial,'%c\n',selection);
+    
+    % take the appropriate action
+    switch selection
+        case 'a'                         % READ CURRENT SENSOR (COUNTS)
+            ADC_counts = fscanf(mySerial, '%d');
+            fprintf('The current sensor reading is %d counts. \n', ADC_counts);
+        case 'b'                         % READ CURRENT SENSOR (mA)
+            ADC_milliamps = fscanf(mySerial, '%f');
+            fprintf('The current through the motor is %f mA. \n', ADC_milliamps);
+        case 'c'                         % READ ENCODER (COUNTS)
+            counts = fscanf(mySerial, '%d');
+            fprintf('The motor angle is %d counts. \n', counts);
+        case 'd'                         % READ ENCODER (DEGREES)
+            degrees = fscanf(mySerial, '%f');
+            fprintf('The motor angle is %f degrees. \n', degrees);
+        case 'e'                         % reset encoderq
+            fprintf('The motor has been reset to 0 degrees. \n')
+        case 'f'                         % SET PWM (-100 to 100)
+            PWM_duty_cycle = input('Enter the duty cycle (-100 to 100): ');
+            fprintf(mySerial, '%f\n', PWM_duty_cycle);
+        case 'g'                         % SET CURRENT GAINS
+            gains = input('Enter the current gains in this format [Kp Ki]: '); % get the numbers to send
+            fprintf(mySerial, '%f %f\n',gains); % send the numbers
+        case 'h'                         % GET CURRENT GAINS
+            gains2 = fscanf(mySerial,'%f %f');   % get the gains back
+            fprintf('The gains are Kp = %f and Ki = %f\n', gains2);
+        case 'i'                         % SET POSITION GAINS
+            position_gains = input('Enter the position gains in this format [Kp Kd Ki]: '); % get the numbers to send
+            fprintf(mySerial, '%f %f %f\n',position_gains); % send the gains
+        case 'j'                         % GET POSITION GAINS
+            position_gains2 = fscanf(mySerial,'%f %f %f');   % get the gains back
+            fprintf('The position gains are Kp = %f, Kd = %f Ki = %f\n', position_gains2);
+        case 'k'                         % TEST CURRENT GAINS
+            read_plot_matrix(mySerial);
+        case 'l'                         % GO TO ANGLE (DEG)
+            desired_angle = input('Enter the desired angle of the motor in degrees: '); % get the numbers to send
+            fprintf(mySerial, '%f\n',desired_angle); % send the gains
+        case 'm'                         % LOAD STEP TRAJECTORY
+            A = input('Enter step trajectory: ');
+            ref = genRef(A, 'step');
+            num_steps = length(ref);
+            fprintf(mySerial, '%d\n', num_steps);       % send the number of samples. 
+            for i = 1:num_steps
+                fprintf(mySerial, '%f\n', ref(i));
+            end
+        case 'n'                        % LOAD CUBIC TRAJECTORY
+            B = input('Enter cubic trajectory: ');
+            ref2 = genRef(B, 'cubic');
+            num_steps_2 = length(ref2);
+            fprintf(mySerial, '%d\n', num_steps_2);       % send the number of samples. 
+            for i = 1:num_steps_2
+                fprintf(mySerial, '%f\n', ref2(i));
+            end
+        case 'o'                        % EXECUTE TRAJECTORY
+            read_plot_matrix2(mySerial);
+        case 'p'
+            fprintf('The motor has been unpowered.\n');
+        case 'q'
+            has_quit = true;             % exit client
+        case 'r'
+            %mode_array = string({'IDLE', 'PWM', 'ITEST', 'HOLD', 'TRACK'});
+            mode = fscanf(mySerial, '%d');
+            %mode_to_print = mode_array(mode);
+            if mode == 0
+                fprintf('The mode is IDLE. \n');
+            elseif mode == 1
+                fprintf('The mode is PWM. \n');
+            %fprintf('The mode is %d. \n', mode);
+            end
+        otherwise
+            fprintf('Invalid Selection %c\n', selection);
+    end
+end
+
+end
